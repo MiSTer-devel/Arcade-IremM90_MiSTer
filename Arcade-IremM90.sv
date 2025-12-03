@@ -56,9 +56,11 @@ module emu
     output        VGA_SCALER, // Force VGA scaler
     output        VGA_DISABLE,
 
-    input  [11:0] HDMI_WIDTH,
-    input  [11:0] HDMI_HEIGHT,
-    output        HDMI_FREEZE,
+	input  [11:0] HDMI_WIDTH,
+	input  [11:0] HDMI_HEIGHT,
+	output        HDMI_FREEZE,
+	output        HDMI_BLACKOUT,
+	output        HDMI_BOB_DEINT,
 
 `ifdef MISTER_FB
     // Use framebuffer in DDRAM (USE_FB=1 in qsf)
@@ -189,6 +191,8 @@ assign DDRAM_CLK = clk_sys;
 assign VGA_F1 = 0;
 assign VGA_SCALER = 0;
 assign VGA_DISABLE = 0;
+assign HDMI_BLACKOUT = 0;
+assign HDMI_BOB_DEINT = 0;
 
 assign AUDIO_S = 1;
 assign AUDIO_MIX = 0;
