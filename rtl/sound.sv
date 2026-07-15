@@ -42,6 +42,7 @@ import board_pkg::*;
 
 module sound (
     input clk, // 40M
+    input clk_ram,
 
     input reset,
 
@@ -54,12 +55,17 @@ module sound (
 
     output [15:0] sound_out,
 
+    // sample ROM in SDRAM (256KB samples don't fit in on-chip BRAM)
+    output [24:0] sdr_sample_addr,
+    input  [63:0] sdr_sample_data,
+    output        sdr_sample_req,
+    input         sdr_sample_rdy,
+
     // ioctl
     input bram_wr,
     input [7:0] bram_data,
     input [19:0] bram_addr,
-    input bram_z80_cs,
-    input bram_sample_cs
+    input bram_z80_cs
 );
 
 
@@ -90,12 +96,16 @@ reg [17:0] sample_addr;
 wire [7:0] sample_data;
 reg sample_play = 0;
 
-singleport_ram #(.widthad(17), .width(8), .name("SAM")) sample_rom(
-    .clock(clk),
-    .address(bram_sample_cs ? bram_addr[16:0] : sample_addr[16:0]),
-    .q(sample_data),
-    .wren((bram_sample_cs & bram_wr)),
-    .data(bram_data)
+sample_cache sample_rom(   // 256KB sample ROM in SDRAM, streamed via a small cache
+    .clk(clk),
+    .clk_ram(clk_ram),
+    .reset(reset),
+    .sdr_addr(sdr_sample_addr),
+    .sdr_data(sdr_sample_data),
+    .sdr_req(sdr_sample_req),
+    .sdr_rdy(sdr_sample_rdy),
+    .addr(sample_addr),
+    .data(sample_data)
 );
 
 wire [7:0] ym_dout;

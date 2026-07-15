@@ -69,6 +69,11 @@ module m90 (
     output reg sdr_cpu_req,
     input sdr_cpu_rdy,
 
+    output [24:0] sdr_sample_addr,
+    input [63:0] sdr_sample_dout,
+    output sdr_sample_req,
+    input sdr_sample_rdy,
+
     input clk_bram,
     input bram_wr,
     input [7:0] bram_data,
@@ -398,6 +403,7 @@ GA25 ga25(
 wire [15:0] sound_sample;
 sound sound(
     .clk(clk_sys),
+    .clk_ram(clk_ram),
     .reset(~reset_n),
 
     .paused(paused),
@@ -406,12 +412,16 @@ sound sound(
 
     .latch_wr(IOWR & cpu_word_addr[7:0] == 8'h00),
     .latch_din(cpu_mem_out[7:0]),
-    
+
+    .sdr_sample_addr(sdr_sample_addr),
+    .sdr_sample_data(sdr_sample_dout),
+    .sdr_sample_req(sdr_sample_req),
+    .sdr_sample_rdy(sdr_sample_rdy),
+
     .bram_addr(bram_addr),
     .bram_data(bram_data),
     .bram_wr(bram_wr),
     .bram_z80_cs(bram_cs[1]),
-    .bram_sample_cs(bram_cs[2]),
 
     .sound_out(sound_sample)
 );

@@ -1555,6 +1555,12 @@ task process_ROOT(input bit [7:0] q);
     8'b01100010: begin
       state <= ROOT_01100010;
     end
+    8'b01100011: begin
+      d.opcode <= OP_BRKN;
+      d.width <= BYTE;
+      d.source0 <= OPERAND_IMM;
+      state <= TERMINAL;
+    end
     8'b11001100: begin
       d.opcode <= OP_BRK3;
       state <= TERMINAL;

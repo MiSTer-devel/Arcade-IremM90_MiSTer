@@ -174,9 +174,28 @@ struct
 wire [7:0] ISPR;
 wire RAMEN = sfr.PRC[6];
 
+// V35 on-chip 256-byte internal RAM, enabled via RAMEN (PRC[6]).
+// Located at the {IDB}Exx page. Used by some games (e.g. Risky Challenge)
+// as fast scratch RAM; must behave as real read/write RAM.
+//
+// Split into even/odd byte banks so each has a single read port and a single
+// write port -> infers distributed RAM (MLAB) instead of ~2K flip-flops plus
+// wide multiplexers, which would not fit the device. Unaligned word accesses
+// are supported: the low bank is simply addressed at idx+1 for the high byte.
+(* ramstyle = "MLAB" *) reg [7:0] internal_ram_lo[128] /* verilator public */; // even bytes
+(* ramstyle = "MLAB" *) reg [7:0] internal_ram_hi[128] /* verilator public */; // odd bytes
+
 ISCR_if EXIC0(clk, reset); ISCR sfr_EXIC0(EXIC0);
 ISCR_if EXIC1(clk, reset); ISCR sfr_EXIC1(EXIC1);
 ISCR_if EXIC2(clk, reset); ISCR sfr_EXIC2(EXIC2);
+
+// Timer unit interrupt-control registers (INTTU0/1/2) and timer data registers.
+ISCR_if TMIC0(clk, reset); ISCR sfr_TMIC0(TMIC0);
+ISCR_if TMIC1(clk, reset); ISCR sfr_TMIC1(TMIC1);
+ISCR_if TMIC2(clk, reset); ISCR sfr_TMIC2(TMIC2);
+
+reg [15:0] TM0, MD0, TM1, MD1;
+reg [7:0]  TMC0, TMC1;
 
 reg halt /*verilator public*/; // TODO, do something with this
 
@@ -222,6 +241,7 @@ wire [7:0] ipq[8];
 wire [3:0] ipq_len;
 
 nec_decode_t decoded /*verilator public*/;
+wire [15:0] dbg_ipc /* verilator public */ = decoded.pc;  // executed instruction start IP (for tracing)
 opcode_e cur_opcode;
 
 reg [1:0] ce_count;
@@ -361,11 +381,39 @@ task write_memory(input bit [15:0] addr, input sreg_index_e seg, input width_e w
         8'h4c: begin EXIC0.cpu_set <= 1; EXIC0.cpu_value <= data[7:0]; end
         8'h4d: begin EXIC1.cpu_set <= 1; EXIC1.cpu_value <= data[7:0]; end
         8'h4e: begin EXIC2.cpu_set <= 1; EXIC2.cpu_value <= data[7:0]; end
+        // Timer data registers (16-bit; also allow high-byte access)
+        8'h80: if (width != BYTE) TM0 <= data; else TM0[7:0] <= data[7:0];
+        8'h81: TM0[15:8] <= data[7:0];
+        8'h82: if (width != BYTE) MD0 <= data; else MD0[7:0] <= data[7:0];
+        8'h83: MD0[15:8] <= data[7:0];
+        8'h88: if (width != BYTE) TM1 <= data; else TM1[7:0] <= data[7:0];
+        8'h89: TM1[15:8] <= data[7:0];
+        8'h8a: if (width != BYTE) MD1 <= data; else MD1[7:0] <= data[7:0];
+        8'h8b: MD1[15:8] <= data[7:0];
+        // Timer control registers
+        8'h90: TMC0 <= data[7:0];
+        8'h91: TMC1 <= data[7:0];
+        // Timer interrupt-control registers
+        8'h9c: begin TMIC0.cpu_set <= 1; TMIC0.cpu_value <= data[7:0]; end
+        8'h9d: begin TMIC1.cpu_set <= 1; TMIC1.cpu_value <= data[7:0]; end
+        8'h9e: begin TMIC2.cpu_set <= 1; TMIC2.cpu_value <= data[7:0]; end
         8'heb: sfr.PRC <= data[7:0];
         8'hff: sfr.IDB <= data[7:0];
         default: begin end
         endcase
     end else if (RAMEN && phys_addr[19:8] == { sfr.IDB, 4'he }) begin
+        if (width == BYTE) begin
+            if (phys_addr[0]) internal_ram_hi[phys_addr[7:1]] <= data[7:0];
+            else              internal_ram_lo[phys_addr[7:1]] <= data[7:0];
+        end else if (phys_addr[0]) begin
+            // unaligned word: low byte at odd addr (hi bank), high byte at next even (lo bank, idx+1)
+            internal_ram_hi[phys_addr[7:1]]          <= data[7:0];
+            internal_ram_lo[phys_addr[7:1] + 7'd1]   <= data[15:8];
+        end else begin
+            // aligned word
+            internal_ram_lo[phys_addr[7:1]] <= data[7:0];
+            internal_ram_hi[phys_addr[7:1]] <= data[15:8];
+        end
     end else begin
         dp_addr <= phys_addr;
         dp_dout <= data;
@@ -390,13 +438,28 @@ task read_memory(input bit [15:0] addr, input sreg_index_e seg, input width_e wi
         8'h4c: internal_din <= { 8'h0, EXIC0.value };
         8'h4d: internal_din <= { 8'h0, EXIC1.value };
         8'h4e: internal_din <= { 8'h0, EXIC2.value };
+        8'h80: internal_din <= TM0;
+        8'h82: internal_din <= MD0;
+        8'h88: internal_din <= TM1;
+        8'h8a: internal_din <= MD1;
+        8'h9c: internal_din <= { 8'h0, TMIC0.value };
+        8'h9d: internal_din <= { 8'h0, TMIC1.value };
+        8'h9e: internal_din <= { 8'h0, TMIC2.value };
         8'heb: internal_din <= { 8'h0, sfr.PRC };
         8'hfc: internal_din <= { 8'h0, ISPR };
         8'hff: internal_din <= { 8'h0, sfr.IDB };
         default: internal_din <= 16'hf00d;
         endcase
     end else if (RAMEN && phys_addr[19:8] == { sfr.IDB, 4'he }) begin
-        internal_din <= 16'hf00d;
+        if (width == BYTE)
+            internal_din <= phys_addr[0] ? { 8'h0, internal_ram_hi[phys_addr[7:1]] }
+                                         : { 8'h0, internal_ram_lo[phys_addr[7:1]] };
+        else if (phys_addr[0])
+            // unaligned word: low byte from hi[idx], high byte from lo[idx+1]
+            internal_din <= { internal_ram_lo[phys_addr[7:1] + 7'd1], internal_ram_hi[phys_addr[7:1]] };
+        else
+            // aligned word
+            internal_din <= { internal_ram_hi[phys_addr[7:1]], internal_ram_lo[phys_addr[7:1]] };
     end else begin
         dp_addr <= phys_addr;
         dp_write <= 0;
@@ -626,8 +689,8 @@ task handle_branch(input nec_decode_t dec);
             4'b1001: cond = ~flags.S; /* P */
             4'b1010: cond = flags.P; /* PE */
             4'b1011: cond = ~flags.P; /* PO */
-            4'b1100: cond = (flags.S ^ flags.V) & ~flags.Z; /* LT */
-            4'b1101: cond = ~(flags.S ^ flags.V) | flags.Z; /* GE */
+            4'b1100: cond = (flags.S ^ flags.V); /* LT */
+            4'b1101: cond = ~(flags.S ^ flags.V); /* GE */
             4'b1110: cond = (flags.S ^ flags.V) | flags.Z; /* LE */
             4'b1111: cond = ~((flags.S ^ flags.V) | flags.Z); /* GT */
             endcase
@@ -709,6 +772,7 @@ endtask
 
 
 reg [7:0] interrupt_vector;
+reg brkn_pending;   // set by OP_BRKN so INT_FETCH_VEC switches to native mode after the push
 wire bcu_intreq;
 wire bcu_intack;
 wire [7:0] bcu_intvec;
@@ -737,7 +801,8 @@ bus_control_unit_v35 BCU(
     .implementation_fault()
 );
 
-wire retire_op = state == IDLE && next_decode_valid && dp_ready;
+wire retire_op /* verilator public */ = state == IDLE && next_decode_valid && dp_ready;
+wire is_idle /* verilator public */ = (state == IDLE);
 wire next_decode_valid;
 nec_decode_t next_decode;
 
@@ -752,7 +817,7 @@ nec_decode nec_decode(
     .retire_op,
     .block_prefetch,
 
-    .secure,
+    .secure(secure & ~flags.MD),   // native mode (MD=1) executes un-decrypted; MAME: decrypt only when MF==0
     .secure_wr,
     .secure_addr,
     .secure_byte
@@ -878,14 +943,19 @@ always_ff @(posedge clk) begin
         flags.AC <= 0;
         flags.P <= 0;
         flags.CY <= 0;
-        flags.MD <= 1;
+        flags.MD <= ~secure;   // secure game boots in secure mode (MD=0 -> decrypt); MAME: MF=table?0:1
         flags.DIR <= 0;
         flags.IE <= 0;
         flags.BRK <= 0;
+        brkn_pending <= 0;
 
         sfr.IDB <= 8'hcc;
         sfr.PRC <= 8'h4e;
         sfr.INTM <= 8'h00;
+
+        TM0 <= 16'd0; MD0 <= 16'd0;
+        TM1 <= 16'd0; MD1 <= 16'd0;
+        TMC0 <= 8'd0; TMC1 <= 8'd0;
 
         state <= IDLE;
         int_processing <= 0;
@@ -905,6 +975,9 @@ always_ff @(posedge clk) begin
         EXIC0.cpu_set <= 0;
         EXIC1.cpu_set <= 0;
         EXIC2.cpu_set <= 0;
+        TMIC0.cpu_set <= 0;
+        TMIC1.cpu_set <= 0;
+        TMIC2.cpu_set <= 0;
 
         case(state)
             IDLE: if (ce_1) begin
@@ -1015,6 +1088,8 @@ always_ff @(posedge clk) begin
             INT_FETCH_VEC: if (dp_ready & ce_1) begin
                 flags.IE <= 0;
                 flags.BRK <= 0;
+                if (brkn_pending) flags.MD <= 1;   // BRKN: enter native mode (after PSW pushed)
+                brkn_pending <= 0;
                 dp_addr <= { 10'd0, interrupt_vector[7:0], 2'b00 };
                 dp_write <= 0;
                 dp_io <= 0;
@@ -1598,6 +1673,16 @@ always_ff @(posedge clk) begin
                             end
                         end
 
+                        // BRKN imm8: software break to NATIVE mode. Vectors like an
+                        // interrupt (pushes PSW/PS/PC) then forces MD=1 so the handler
+                        // executes un-decrypted. MD is set after the push (see
+                        // INT_FETCH_VEC) so the saved PSW keeps the pre-break mode.
+                        OP_BRKN: begin
+                            interrupt_vector <= decoded.imm[7:0];
+                            exception = 1;
+                            brkn_pending <= 1;
+                        end
+
                         OP_FINT: begin
                             fint <= 1;
                         end
@@ -1609,7 +1694,8 @@ always_ff @(posedge clk) begin
                                 flags.Z <= 1;
                                 flags.CY <= 0;
                             end else if (exec_stage == 1) begin
-                                if (bcd_offset == reg_cw[7:1]) begin
+                                // byte count = ceil(CL/2) = floor(CL/2) + (CL & 1), matching MAME's (CL+1)/2
+                                if (bcd_offset == (reg_cw[7:1] + { 6'd0, reg_cw[0] })) begin
                                     working = 0;
                                     delay = 0;
                                 end else begin
@@ -1632,11 +1718,13 @@ always_ff @(posedge clk) begin
                                 bcd_result_high = bcd_acc_high;
                                 if (bcd_result_low > 5'd9) begin
                                     if (decoded.opcode == OP_ADD4S) begin
+                                        // decimal carry into the high nibble
                                         bcd_result_low = bcd_acc_low + 5'd6;
                                         bcd_result_high = bcd_acc_high + 5'd1;
                                     end else begin
-                                        bcd_result_low = bcd_acc_low + 5'd6;
-                                        bcd_result_high = bcd_acc_high + 5'd1;
+                                        // SUB4S/CMP4S: decimal borrow from the high nibble
+                                        bcd_result_low = bcd_acc_low - 5'd6;
+                                        bcd_result_high = bcd_acc_high - 5'd1;
                                     end
                                 end
 
@@ -1884,7 +1972,7 @@ always_ff @(posedge clk) begin
                         flags.IE  <= mem_din[9];
                         flags.DIR <= mem_din[10];
                         flags.V   <= mem_din[11];
-                        // flags.MD  <= mem_din[15]; // TODO V33, no MD flag, V20/30 will need this
+                        flags.MD  <= mem_din[15]; // restore mode flag (RETI/POPF) -> returns from BRKN native handler
                     end
                     11: begin
                         reg_ps <= mem_din;
@@ -2017,6 +2105,23 @@ v35_edge_trigger intp2_edge(
     .trigger(EXIC2.ctrl_set_if)
 );
 
+// On-chip timer unit. Counts on the master clock enable and raises the
+// timer interrupt-control registers, which feed the PIC (vectors 28/29/30).
+v35_timer timer(
+    .clk(clk),
+    .ce(ce),
+    .reset(reset),
+
+    .pck_sel(sfr.PRC[1:0]),
+
+    .TM0(TM0), .MD0(MD0), .TM1(TM1), .MD1(MD1),
+    .TMC0(TMC0), .TMC1(TMC1),
+
+    .tu0_set(TMIC0.ctrl_set_if),
+    .tu1_set(TMIC1.ctrl_set_if),
+    .tu2_set(TMIC2.ctrl_set_if)
+);
+
 wire [7:0] pic_intvec;
 wire pic_intreq;
 
@@ -2031,6 +2136,9 @@ v35_pic pic(
     .EXIC0(EXIC0.value),
     .EXIC1(EXIC1.value),
     .EXIC2(EXIC2.value),
+    .TMIC0(TMIC0.value),
+    .TMIC1(TMIC1.value),
+    .TMIC2(TMIC2.value),
 
     .ISPR(ISPR),
 
@@ -2041,6 +2149,9 @@ v35_pic pic(
     .EXIC0_clear(EXIC0.ctrl_clear_if),
     .EXIC1_clear(EXIC1.ctrl_clear_if),
     .EXIC2_clear(EXIC2.ctrl_clear_if),
+    .TMIC0_clear(TMIC0.ctrl_clear_if),
+    .TMIC1_clear(TMIC1.ctrl_clear_if),
+    .TMIC2_clear(TMIC2.ctrl_clear_if),
 
     .int_req(pic_intreq),
     .int_vector(pic_intvec),

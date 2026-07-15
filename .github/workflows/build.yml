@@ -1,0 +1,54 @@
+name: Build Core
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  synthesis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        revision:
+          - Arcade-IremM90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Run compilation flow
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/build" \
+            -w /build \
+            raetro/quartus:17.0 \
+            quartus_sh --flow compile Arcade-IremM90 -c ${{ matrix.revision }}
+
+      - name: Upload RBF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.revision }}-rbf
+          path: output_files/${{ matrix.revision }}.rbf
+          if-no-files-found: error
+
+      - name: Upload build logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.revision }}-logs
+          path: |
+            output_files/*.rpt
+            output_files/*.summary
+          if-no-files-found: warn

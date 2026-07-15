@@ -254,7 +254,7 @@ always_ff @(posedge clk) begin
                 end
                 4'd2: begin
                     if (rowscroll_active) begin
-                        vram_addr <= 15'h7c00 + VE[7:0];
+                        vram_addr <= 15'h7c00 + VE[8:0];
                     end else begin
                         vram_addr <= layer_vram_addr[0] | 15'd1;
                         layer_load[0] <= 1;
@@ -298,7 +298,7 @@ always_ff @(posedge clk) begin
                 end
                 4'd10: begin
                     if (rowscroll_active) begin
-                        vram_addr <= 15'h7e00 + VE[7:0];
+                        vram_addr <= 15'h7e00 + VE[8:0];
                     end else begin
                         vram_addr <= layer_vram_addr[1] | 15'd1;
                         layer_load[1] <= 1;

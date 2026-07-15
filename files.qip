@@ -17,6 +17,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/ga25_layer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ga25_obj.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ga25_linebuffer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sample_cache.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/hiscore.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/rom_cache.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/vshrink.sv

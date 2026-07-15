@@ -28,7 +28,7 @@ package board_pkg;
 
     parameter region_t REGION_CPU_ROM       = '{ base_addr:'h000_0000, reorder_64:0, bram_cs:5'b00000 };
     parameter region_t REGION_CPU_RAM       = '{ base_addr:'h010_0000, reorder_64:0, bram_cs:5'b00000 };
-    parameter region_t REGION_SOUND_SAMPLES = '{ base_addr:'h000_0000, reorder_64:0, bram_cs:5'b00100 };
+    parameter region_t REGION_SOUND_SAMPLES = '{ base_addr:'h060_0000, reorder_64:0, bram_cs:5'b00000 }; // SDRAM (after GFX @0x400000+2MB); was BRAM but 256KB samples don't fit on-chip
     parameter region_t REGION_GFX           = '{ base_addr:'h040_0000, reorder_64:1, bram_cs:5'b00000 };
     parameter region_t REGION_CRYPT         = '{ base_addr:'h000_0000, reorder_64:0, bram_cs:5'b00001 };
     parameter region_t REGION_SOUND_CPU     = '{ base_addr:'h000_0000, reorder_64:0, bram_cs:5'b00010 };

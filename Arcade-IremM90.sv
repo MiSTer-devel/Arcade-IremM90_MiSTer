@@ -338,6 +338,10 @@ wire [63:0] sdr_cpu_dout;
 wire [24:0] sdr_cpu_addr;
 wire sdr_cpu_req;
 
+wire [63:0] sdr_sample_dout;
+wire [24:0] sdr_sample_addr;
+wire sdr_sample_req, sdr_sample_rdy;
+
 reg [24:0] sdr_rom_addr;
 reg [15:0] sdr_rom_data;
 reg [1:0] sdr_rom_be;
@@ -375,10 +379,10 @@ sdram sdram
     .ch1_ready(sdr_bg_rdy),
     .ch1_64bit(sdr_bg_64bit),
 
-    .ch2_addr(0),
-    .ch2_dout(),
-    .ch2_req(0),
-    .ch2_ready(),
+    .ch2_addr(sdr_sample_addr[24:1]),
+    .ch2_dout(sdr_sample_dout),
+    .ch2_req(sdr_sample_req),
+    .ch2_ready(sdr_sample_rdy),
 
     // multiplexed with rom download and cpu read/writes
     .ch3_addr(sdr_ch3_addr[24:1]),
@@ -552,6 +556,11 @@ m90 m90(
     .sdr_cpu_addr(sdr_cpu_addr),
     .sdr_cpu_req(sdr_cpu_req),
     .sdr_cpu_rdy(sdr_cpu_rdy),
+
+    .sdr_sample_dout(sdr_sample_dout),
+    .sdr_sample_addr(sdr_sample_addr),
+    .sdr_sample_req(sdr_sample_req),
+    .sdr_sample_rdy(sdr_sample_rdy),
 
     .clk_bram(clk_sys),
     .bram_addr(bram_addr),

@@ -60,7 +60,10 @@ always_comb begin
         if (operation != ALU_OP_INC)
             flags.CY = wide ? temp17_2[16] : temp17_2[8];
         
-        flags.AC = ( {1'b0, temp17[3:0]} + {1'b0, ta[3:0]} ) > 5'd15 ? 1 : 0;
+        // AC = carry out of bit 3, including the incoming carry for ADDC
+        flags.AC = ( {1'b0, ta[3:0]}
+                   + {1'b0, (operation == ALU_OP_INC ? 4'd1 : tb[3:0])}
+                   + {4'd0, (operation == ALU_OP_ADDC ? flags_in.CY : 1'b0)} ) > 5'd15 ? 1 : 0;
 
         if (wide)
             flags.V = (ta[15] ^ res[15]) & (temp17[15] ^ res[15]);
@@ -84,7 +87,10 @@ always_comb begin
         if (operation != ALU_OP_DEC)
             flags.CY = wide ? temp17_2[16] : temp17_2[8];
 
-        flags.AC = temp17_2[3:0] > ta[3:0] ? 1 : 0;
+        // AC = borrow out of bit 3, including the incoming carry for SUBC
+        flags.AC = ( {1'b0, ta[3:0]} <
+                     ( {1'b0, (operation == ALU_OP_DEC ? 4'd1 : tb[3:0])}
+                     + {4'd0, (operation == ALU_OP_SUBC ? flags_in.CY : 1'b0)} ) ) ? 1 : 0;
 
         if (wide)
             flags.V = (ta[15] ^ temp17[15]) & (ta[15] ^ res[15]);
